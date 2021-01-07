@@ -245,6 +245,11 @@ function emit(loop)
                     return :($A[$(i...), $(idx).I...])
                 end
             end
+            if @capture(expr, lhs_ = rhs_)
+                if lhs in private_vars
+                    error("Can't assign to variables marked private")
+                end
+            end
             if expr isa Symbol
                 if expr in private_vars
                     return :($expr[$__index_Local_Linear($(idx))])
