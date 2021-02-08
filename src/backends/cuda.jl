@@ -173,6 +173,20 @@ function threads_to_workgroupsize(threads, ndrange)
     return Tuple(workgroupsize)
 end
 
+function tune_kernel(kernel::Kernel{CUDADevice}, args...; ndrange=nothing)
+    @assert KernelAbstractions.workgroupsize(kernel) <: StaticSize
+    dyn_kernel = Kernel{CUDADevice, DynamicSize, KernelAbstractions.ndrange(kernel), typeof(kernel.f)}(kernel.f)
+    ndrange, _, iterspace, _ = launch_config(dyn_kernel, ndrange, ndrange)
+    ctx = mkcontext(dyn_kernel, ndrange, iterspace)
+    _kernel = CUDA.@cuda name=String(nameof(kernel.f)) launch=false Cassette.overdub(ctx, kernel.f, args...)
+
+    config = CUDA.launch_configuration(_kernel.fun; max_threads=prod(ndrange))
+
+    #@show ndrange
+    workgroupsize = #=@show =#threads_to_workgroupsize(config.threads, ndrange)
+    return Kernel{CUDADevice, StaticSize{workgroupsize}, KernelAbstractions.ndrange(kernel), typeof(kernel.f)}(kernel.f)
+end
+
 function (obj::Kernel{CUDADevice})(args...; ndrange=nothing, dependencies=nothing, workgroupsize=nothing, progress=yield)
 
     ndrange, _workgroupsize, iterspace, dynamic = launch_config(obj, ndrange, workgroupsize)
@@ -185,7 +199,8 @@ function (obj::Kernel{CUDADevice})(args...; ndrange=nothing, dependencies=nothin
 
         config = CUDA.launch_configuration(kernel.fun; max_threads=prod(ndrange))
 
-        workgroupsize = threads_to_workgroupsize(config.threads, ndrange)
+        #@show ndrange
+        workgroupsize = #=@show =#threads_to_workgroupsize(config.threads, ndrange)
         iterspace, dynamic = partition(obj, ndrange, workgroupsize)
     else
         workgroupsize = _workgroupsize
